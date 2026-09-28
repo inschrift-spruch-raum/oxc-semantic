@@ -16,15 +16,14 @@ NAPI 与 WASI API。
 
 ## 安装
 
-发布到 npm 后可执行:
+从 npm 安装已发布的包:
 
 ```sh
 pnpm add oxc-semantic
 ```
 
-在包发布到 npm 之前，可从 GitHub Release 下载根包资产
-`oxc-semantic-0.1.0.tgz`，在自己的项目中执行
-`pnpm add ./oxc-semantic-0.1.0.tgz`。根包可独立使用，不需要另行安装目标绑定包。
+发布工作流会把自包含的根包 tarball 发布到 npm。手动测试构建使用 `test`
+dist-tag，可执行 `pnpm add oxc-semantic@test` 安装。
 
 Node.js 和 Web 共用同一份 `wasm32-wasip1-threads` 构建。包内部的 imports
 条件会让浏览器 bundler 自动选择浏览器 loader。
@@ -109,9 +108,9 @@ pnpm run lint
 pnpm test
 ```
 
-`build:wasm` 生成 Node.js 和浏览器共用的 WASI loader 与模块。发布工作流只构建
-一个 WASI target，并将它装配到根包。
-推送到 `main` 时，产物会发布到 `v<version>` GitHub Release。
+`build:wasm` 生成 Node.js 和浏览器共用的 WASI loader 与模块。发布工作流会校验
+`v<version>` 标签，构建一个 WASI target，并通过独立的发布工作流将自包含根包发布
+到 npm。手动测试构建会发布到 `test` dist-tag。
 
 根包 tarball 携带 WASI loader、worker 和一份正式版 WASM。目标绑定包只作为
 内部构建产物，不单独发布；Node.js 和 Web 都使用同一个

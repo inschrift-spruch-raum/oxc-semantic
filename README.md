@@ -16,16 +16,15 @@ checking the upstream AST, semantic, NAPI, and WASI APIs together.
 
 ## Install
 
-After publication to npm:
+Install the published package from npm:
 
 ```sh
 pnpm add oxc-semantic
 ```
 
-Before npm publication, download the **root**
-`oxc-semantic-0.1.0.tgz` asset from a GitHub Release and install it in your
-project with `pnpm add ./oxc-semantic-0.1.0.tgz`. The root tarball is
-self-contained; it does not need the separate binding tarball.
+The release workflow publishes the self-contained root tarball to npm. Manual
+test builds use the `test` dist-tag and can be installed with
+`pnpm add oxc-semantic@test`.
 
 One `wasm32-wasip1-threads` build is used for Node.js and Web. The package's
 internal import map selects the browser loader through the `browser` condition.
@@ -116,9 +115,9 @@ pnpm test
 ```
 
 `build:wasm` creates the Node.js and browser WASI loaders and module. The
-release workflow builds one WASI target and stages it into the root package.
-It publishes the artifact to the `v<version>` GitHub Release on pushes to
-`main`.
+release workflow verifies a `v<version>` tag, builds one WASI target, and
+publishes the self-contained tarball to npm through the dedicated publish
+workflow. The manual test-build workflow publishes to the `test` dist-tag.
 
 The root tarball contains the WASI loader, worker, and one release WASM. The
 target binding is an internal implementation detail; consumers use the same
