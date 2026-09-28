@@ -1,109 +1,133 @@
-# template
+# oxc-semantic
 
 English | [中文](README.zh.md)
 
-A self-contained TypeScript library template with a pinned toolchain. Everything the repository needs — compiler settings, static-analysis configuration, test runner, build pipeline, CI workflows, and contributor rules — lives inside this directory, and every development input resolves from this repository root.
+`oxc-semantic` exposes Oxc's Rust `SemanticBuilder` through a small, stable
+TypeScript API. Every supported runtime uses the same WASI binding built from
+Oxc's `oxc_parser` and `oxc_semantic` crates.
 
-The toolchain and the conventions are the deliverable. The sample library is one placeholder module, so nothing incidental gets copied along with it.
+Supported runtimes:
 
-## Repository layout
+- Node.js: Windows x64, Linux x64, and macOS arm64 through WASI
+- Web: `wasm32-wasip1-threads`
 
-```text
-.
-├── .github/workflows/
-│   ├── ci.yml                    # Install, lint, test, and build on every change
-│   └── release.yml               # Build and publish the packed tarball to a GitHub Release
-├── src/
-│   ├── README.md                 # Growth rules for source modules
-│   └── index.ts                  # The whole sample library: GREETING and greet()
-├── tests/
-│   ├── README.md                 # Test and snapshot conventions
-│   ├── index.test.ts             # Sample suite for the placeholder module
-│   └── snapshots/
-│       └── README.md             # Optional product-visible fixture contract
-├── .gitignore                    # Generated artifact exclusions
-├── .oxfmtrc.json                 # Formatter configuration
-├── .oxlintrc.json                # Type-aware Oxlint configuration
-├── AGENTS.md                     # Repository-local contributor rules
-├── LICENSE                       # Template license
-├── README.md                     # Repository and usage contract
-├── package.json                  # Exports, scripts, pinned dev toolchain
-├── pnpm-lock.yaml                # Reproducible registry dependency graph
-├── pnpm-workspace.yaml           # Package-manager policy
-├── tsconfig.json                 # Compiler and type-aware lint project
-├── tsdown.config.ts              # Direct source-to-runtime/declaration build
-└── vitest.config.ts              # Test runner configuration
+The package is generated against Oxc `0.151.0`. Upgrade that version only after
+checking the upstream AST, semantic, NAPI, and WASI APIs together.
+
+## Install
+
+After publication to npm:
+
+```sh
+pnpm add oxc-semantic
 ```
 
-## Quick start
+Before npm publication, download the **root**
+`oxc-semantic-0.1.0.tgz` asset from a GitHub Release and install it in your
+project with `pnpm add ./oxc-semantic-0.1.0.tgz`. The root tarball is
+self-contained; it does not need the separate binding tarball.
 
-Run every command from this directory:
+One `wasm32-wasip1-threads` build is used for Node.js and Web. The package's
+internal import map selects the browser loader through the `browser` condition.
+
+## Node.js
+
+```ts
+import { analyzeSync } from 'oxc-semantic'
+
+const result = analyzeSync(
+  'example.ts',
+  'const answer = 42\nconsole.log(answer)',
+  { lang: 'ts', sourceType: 'module' },
+)
+
+console.log(result.symbols)
+console.log(result.references)
+```
+
+`analyze` has the same arguments and returns a `Promise`. Both functions parse
+the source with Oxc and then run `SemanticBuilder`; no source file is read or
+modified.
+
+## Web
+
+```ts
+import { analyze } from 'oxc-semantic'
+
+const result = await analyze(
+  'example.ts',
+  'const answer = 42\nconsole.log(answer)',
+  { lang: 'ts', sourceType: 'module' },
+)
+```
+
+The package's internal WASI import resolves to the browser loader in a
+bundler. The WASI worker uses shared WebAssembly memory. A browser page must be served from a
+secure context with cross-origin isolation (`COOP: same-origin` and
+`COEP: require-corp`), which makes `crossOriginIsolated` true.
+
+## API
+
+### `analyzeSync(filename, sourceText, options?)`
+
+Returns an `AnalyzeResult` on the current thread.
+
+### `analyze(filename, sourceText, options?)`
+
+Returns `Promise<AnalyzeResult>`. Node.js and the browser call the WASI async
+worker; `analyzeSync` runs on the calling thread.
+
+`options.lang` accepts `js`, `jsx`, `ts`, `tsx`, or `dts`. `options.sourceType`
+accepts `script`, `module`, `commonjs`, or `unambiguous`. Set
+`includeUnresolved` to `false` to omit references that do not resolve to a
+symbol. A language override keeps the filename's module kind unless
+`sourceType` is also specified. Filename inference accepts both `/` and `\`
+path separators, including Windows paths under WASI.
+
+Every range uses UTF-16 code-unit offsets, matching JavaScript string indices.
+The result contains `scopes`, `symbols`, `references`, and parser or semantic
+`diagnostics`. Diagnostics match Oxc NAPI's severity, label, helpMessage,
+and codeframe fields; flags without set bits are empty arrays. A syntax error
+returns diagnostics and empty semantic arrays.
+The result's `sourceType` uses a language/module label such as `ts/module`;
+TypeScript declaration files report `dts`.
+
+`bindingTarget()` reports `wasm32-wasi`. The legacy `nativePlatform()` API is
+also a binding-flavor alias and returns `wasm32-wasi` on every runtime; it does
+not report the host operating system.
+
+## Development
+
+Use `pnpm` for JavaScript dependencies and Rust/Cargo for the NAPI crate.
+TypeScript sources live in `src/ts`, Rust sources in `src/rs`, and the Cargo
+manifest, lockfile, and tool configuration live at the project root:
+
+Build output is consolidated under `dist`: `dist/lib` contains the TypeScript
+bundle and declarations, `dist/wasm` contains the WASI runtime files, and
+`dist/target` is the Rust build cache. Only `dist/lib` and `dist/wasm` are
+included in the package.
 
 ```sh
 pnpm install
+pnpm run build
 pnpm run fmt:check
 pnpm run lint
 pnpm test
-pnpm run build
 ```
 
-`lint` runs Oxlint with type-aware analysis and denies warnings for `src` and `tests`. `build` compiles `src/` into ready-to-pack ESM JavaScript and declarations under `lib/`; it does not run an install-time lifecycle build. Extra arguments pass through to tsdown, so `pnpm run build --sourcemap` emits source maps for local debugging while the default build emits none.
+`build:wasm` creates the Node.js and browser WASI loaders and module. The
+release workflow builds one WASI target and stages it into the root package.
+It publishes the artifact to the `v<version>` GitHub Release on pushes to
+`main`.
 
-## The sample module
+The root tarball contains the WASI loader, worker, and one release WASM. The
+target binding is an internal implementation detail; consumers use the same
+`import 'oxc-semantic'` specifier on Node.js and Web.
 
-`src/index.ts` exports one constant and one function:
+The Rust entry is `src/rs/lib.rs`. It is intentionally a view adapter: it
+returns JSON-compatible scope, symbol, reference, and diagnostic records
+instead of exposing Oxc arena or Rust objects directly.
 
-```ts
-import { GREETING, greet } from 'template'
+## License
 
-greet()   // 'hello world'
-GREETING  // 'hello world'
-```
-
-Replace it with the library you actually want. Delete the placeholder when the first real module lands.
-
-## How to grow
-
-- one module per capability: `src/<feature>.ts`, or `src/<feature>/` once a capability needs several files;
-- with more than one module, reduce `src/index.ts` to a pure re-export barrel — no logic, no side effects, no default export;
-- consumer-facing options get their own `src/config.ts` owner instead of living as implementation constants;
-- process, clock, transport, and storage access belong behind a small interface, so a test replaces it instead of mocking globals;
-- failures get a small `Error` subclass so callers can catch them precisely;
-- optional state is `undefined`; the library never uses `null` as a sentinel;
-- every published module needs one tsdown entry and one `exports` entry in `package.json`.
-
-## Create your library
-
-1. Rename the package in `package.json` and update `description` and `keywords`.
-2. Replace `src/index.ts` and the sample suite in `tests/index.test.ts`.
-3. Keep the `exports` map, the `main` and `types` fields, and the tsdown entry map in step with the modules you publish.
-4. Update `README.md`, `README.zh.md`, `AGENTS.md`, and `LICENSE`.
-5. Set `private` to `false` only when the published dependencies and artifacts are ready.
-
-Keep the toolchain files as they are. `.oxlintrc.json` is the contract: fix code instead of relaxing rules, and prefer editing over adding an `oxlint-disable` directive, because warnings are denied.
-
-## CI
-
-Two GitHub Actions workflows ship with the template:
-
-- `.github/workflows/ci.yml` — every push to `main` and every pull request: install with the frozen lockfile, Oxlint, tests, and build.
-- `.github/workflows/release.yml` — every push to `main`: the same checks, then `pnpm pack` into `dist/pkg.tgz` and publish that tarball to the GitHub Release tagged `v<version>` from `package.json`. Bump the version to cut a new release; re-pushing the same version refreshes that release's artifact.
-
-Both workflows read the pnpm version from `packageManager` in `package.json`, so keep that field in sync with the toolchain you actually use.
-
-## Distribution checks
-
-Before publishing, build and inspect the final archive:
-
-```sh
-pnpm run lint
-pnpm test
-pnpm run build
-pnpm pack --dry-run --json
-```
-
-The packed archive must contain every runtime and declaration file named by `main`, `types`, `exports`, and `files`. Consumers install the ready-made `lib/` output; no `prepare` script runs on install.
-
-## Testing guidance
-
-The sample suite in `tests/index.test.ts` shows the conventions: named test functions, `expect.hasAssertions()` first, an explicit timeout, and source imports through `#src/<name>`. Add `tests/<feature>.test.ts` as the library grows, and introduce `tests/harness.ts` only when several suites need the same composed setup. Stable, product-visible expected output belongs under `tests/snapshots/`.
+BSD-3-Clause. The Oxc crates retain their upstream licenses and notices.

@@ -1,109 +1,125 @@
-# template
+# oxc-semantic
 
 [English](README.md) | 中文
 
-自带完整工具链的 TypeScript 库模板。仓库需要的所有内容——编译器设置、静态分析配置、测试运行器、构建流水线、CI 工作流与贡献规则——都在本目录内,所有开发输入都从本仓库根目录解析。
+`oxc-semantic` 将 Oxc Rust 的 `SemanticBuilder` 暴露为稳定的 TypeScript
+API。所有支持的运行时都使用基于 Oxc `oxc_parser` 与 `oxc_semantic` crate
+构建的同一个 WASI 绑定。
 
-工具链与约定才是交付物。示例库只有一个占位模块,这样复制模板时不会把多余的实现一起带走。
+支持的运行时:
 
-## 仓库布局
+- Node.js: Windows x64、Linux x64、macOS arm64，统一使用 WASI
+- Web: `wasm32-wasip1-threads`
 
-```text
-.
-├── .github/workflows/
-│   ├── ci.yml                    # 每次变更执行安装、lint、测试与构建
-│   └── release.yml               # 构建并把打包产物发布到 GitHub Release
-├── src/
-│   ├── README.md                 # 源码模块的增长规则
-│   └── index.ts                  # 全部示例库:GREETING 与 greet()
-├── tests/
-│   ├── README.md                 # 测试与快照约定
-│   ├── index.test.ts             # 占位模块的示例测试
-│   └── snapshots/
-│       └── README.md             # 可选的产品可见 fixture 契约
-├── .gitignore                    # 生成产物排除
-├── .oxfmtrc.json                 # 格式化配置
-├── .oxlintrc.json                # 类型感知的 Oxlint 配置
-├── AGENTS.md                     # 仓库本地贡献规则
-├── LICENSE                       # 模板许可证
-├── README.md                     # 仓库与使用契约
-├── package.json                  # 导出、脚本与锁定版本的开发工具链
-├── pnpm-lock.yaml                # 可复现的 registry 依赖图
-├── pnpm-workspace.yaml           # 包管理器策略
-├── tsconfig.json                 # 编译器与类型感知 lint 工程
-├── tsdown.config.ts              # 从源码直接构建运行时与声明
-└── vitest.config.ts              # 测试运行器配置
+当前绑定基于 Oxc `0.151.0` 构建。升级版本时需要同时核对上游 AST、semantic、
+NAPI 与 WASI API。
+
+## 安装
+
+发布到 npm 后可执行:
+
+```sh
+pnpm add oxc-semantic
 ```
 
-## 快速开始
+在包发布到 npm 之前，可从 GitHub Release 下载根包资产
+`oxc-semantic-0.1.0.tgz`，在自己的项目中执行
+`pnpm add ./oxc-semantic-0.1.0.tgz`。根包可独立使用，不需要另行安装目标绑定包。
 
-所有命令都在本目录运行:
+Node.js 和 Web 共用同一份 `wasm32-wasip1-threads` 构建。包内部的 imports
+条件会让浏览器 bundler 自动选择浏览器 loader。
+
+## Node.js
+
+```ts
+import { analyzeSync } from 'oxc-semantic'
+
+const result = analyzeSync(
+  'example.ts',
+  'const answer = 42\nconsole.log(answer)',
+  { lang: 'ts', sourceType: 'module' },
+)
+
+console.log(result.symbols)
+console.log(result.references)
+```
+
+`analyze` 参数相同并返回 `Promise`。两个函数都会用 Oxc 解析源码，再运行
+`SemanticBuilder`;不会读取或修改源码文件。
+
+## Web
+
+```ts
+import { analyze } from 'oxc-semantic'
+
+const result = await analyze(
+  'example.ts',
+  'const answer = 42\nconsole.log(answer)',
+  { lang: 'ts', sourceType: 'module' },
+)
+```
+
+浏览器 bundler 会通过包内部 imports 条件选择浏览器 WASI loader。WASI worker 使用共享
+WebAssembly memory。浏览器页面必须在安全上下文中，并且启用跨源隔离
+(`COOP: same-origin` 与 `COEP: require-corp`)，使 `crossOriginIsolated` 为
+`true`。
+
+## API
+
+### `analyzeSync(filename, sourceText, options?)`
+
+在当前线程同步返回 `AnalyzeResult`。
+
+### `analyze(filename, sourceText, options?)`
+
+返回 `Promise<AnalyzeResult>`。Node.js 和浏览器都调用 WASI 异步 worker；
+`analyzeSync` 才在调用线程上同步运行。
+
+`options.lang` 支持 `js`、`jsx`、`ts`、`tsx`、`dts`; `options.sourceType` 支持
+`script`、`module`、`commonjs`、`unambiguous`。将 `includeUnresolved` 设为
+`false` 可以忽略无法解析到 symbol 的引用。指定语言时仍保留从文件名推断的模块
+类型，除非同时指定 `sourceType`。文件名推断同时识别 `/` 和 `\` 路径分隔符，
+包括 WASI 环境中的 Windows 路径。
+
+所有 range 都使用 UTF-16 code-unit offset，与 JavaScript 字符串下标一致。
+结果包含 `scopes`、`symbols`、`references` 以及 parser 或 semantic 的
+`diagnostics`。诊断的 severity、label、helpMessage 和 codeframe 与 Oxc NAPI
+一致；空 flags 输出空数组。语法错误时返回 diagnostics，语义数组为空。
+结果的 `sourceType` 通常使用 `ts/module` 这样的语言/模块标签；TypeScript 声明文件
+返回 `dts`。
+
+`bindingTarget()` 返回 `wasm32-wasi`。为兼容旧 API，`nativePlatform()` 也作为
+绑定类型别名在各端返回 `wasm32-wasi`，不表示宿主操作系统。
+
+## 开发
+
+JavaScript 运行时和依赖使用 `pnpm`，NAPI crate 使用 Rust/Cargo。TypeScript
+源码位于 `src/ts`，Rust 源码位于 `src/rs`，Cargo manifest、lockfile 和工具配置
+位于项目根目录:
+
+所有构建产物统一放在 `dist`：`dist/lib` 是 TypeScript bundle 和声明文件，
+`dist/wasm` 是 WASI 运行时文件，`dist/target` 是 Rust 编译缓存。发布包只包含
+`dist/lib` 和 `dist/wasm`。
 
 ```sh
 pnpm install
+pnpm run build
 pnpm run fmt:check
 pnpm run lint
 pnpm test
-pnpm run build
 ```
 
-`lint` 对 `src` 与 `tests` 启用类型感知分析并拒绝警告。`build` 把 `src/` 编译为 `lib/` 下可直接打包的 ESM JavaScript 与声明文件,不运行安装期 lifecycle build。额外参数会透传给 tsdown,因此本地调试可用 `pnpm run build --sourcemap` 产出 source map;默认 `build` 不产 map。
+`build:wasm` 生成 Node.js 和浏览器共用的 WASI loader 与模块。发布工作流只构建
+一个 WASI target，并将它装配到根包。
+推送到 `main` 时，产物会发布到 `v<version>` GitHub Release。
 
-## 示例模块
+根包 tarball 携带 WASI loader、worker 和一份正式版 WASM。目标绑定包只作为
+内部构建产物，不单独发布；Node.js 和 Web 都使用同一个
+`import 'oxc-semantic'` 导入方式。
 
-`src/index.ts` 只导出一个常量和一个函数:
+Rust 入口为 `src/rs/lib.rs`。它是一个 view adapter: 返回 JSON 兼容的 scope、
+symbol、reference 与 diagnostic 记录，不直接暴露 Oxc arena 或 Rust 对象。
 
-```ts
-import { GREETING, greet } from 'template'
+## 许可证
 
-greet()   // 'hello world'
-GREETING  // 'hello world'
-```
-
-把它替换成你真正要写的库。第一个真实模块落地时删掉这个占位文件。
-
-## 如何增长
-
-- 一个能力一个模块:`src/<feature>.ts`;一个能力需要多个文件时用 `src/<feature>/`;
-- 模块多于一个后,把 `src/index.ts` 收成纯 re-export barrel——不含逻辑、不产生副作用、不加 default export;
-- 面向消费者的选项放在独立的 `src/config.ts` 属主里,而不是藏在实现常量中;
-- 进程、时钟、传输与存储访问都放在一个小组件接口之后,让测试替换而不是 mock 全局对象;
-- 失败通过一个小的 `Error` 子类抛出,让调用方能精确捕获;
-- 可选状态用 `undefined` 表示,库内从不使用 `null` 哨兵;
-- 每个发布的模块都要在 `package.json` 里有一个 tsdown entry 与一个 `exports` 条目。
-
-## 创建你的库
-
-1. 重命名 `package.json` 中的包,并更新 `description` 与 `keywords`。
-2. 替换 `src/index.ts` 与 `tests/index.test.ts` 中的示例测试。
-3. 让 `exports` 映射、`main`/`types` 字段与 tsdown entry 映射和实际发布的模块保持一致。
-4. 更新 `README.md`、`README.zh.md`、`AGENTS.md` 与 `LICENSE`。
-5. 只有当公共依赖与分发产物就绪时,才把 `private` 设为 `false`。
-
-工具链文件保持原样。`.oxlintrc.json` 是契约:修代码而不是放宽规则;优先直接改代码而不是添加 `oxlint-disable`,因为警告会被拒绝。
-
-## CI
-
-模板自带两个 GitHub Actions 工作流:
-
-- `.github/workflows/ci.yml` — 每次推送到 `main` 与每个 pull request:冻结 lockfile 安装、Oxlint、测试与构建。
-- `.github/workflows/release.yml` — 每次推送到 `main`:执行同样的检查,然后用 `pnpm pack` 打包到 `dist/pkg.tgz`,并把它发布到以 `package.json` 版本号命名的 GitHub Release(`v<version>`)。提升版本即发布新版本;同版本再次推送会刷新该 Release 的产物。
-
-两个工作流都从 `package.json` 的 `packageManager` 读取 pnpm 版本,因此该字段要和实际使用的工具链保持一致。
-
-## 分发检查
-
-发布前构建并检查最终归档:
-
-```sh
-pnpm run lint
-pnpm test
-pnpm run build
-pnpm pack --dry-run --json
-```
-
-最终包必须包含 `main`、`types`、`exports` 与 `files` 命名的每个运行时与声明文件。消费者安装现成的 `lib/` 输出;安装时不运行 `prepare` 脚本。
-
-## 测试指引
-
-`tests/index.test.ts` 演示了约定:具名测试函数、首行 `expect.hasAssertions()`、显式 timeout,以及通过 `#src/<name>` 导入源码。库增长时添加 `tests/<feature>.test.ts`;只有多个测试套件需要同一套组装时才引入 `tests/harness.ts`。稳定的产品可见期望输出放在 `tests/snapshots/`。
+BSD-3-Clause。Oxc crate 继续遵循其上游许可证与声明。

@@ -15,7 +15,12 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1-threads
       - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install chromium
+      - run: pnpm run fmt:check
+      - run: pnpm run build
       - run: pnpm run lint
       - run: pnpm test
-      - run: pnpm run build

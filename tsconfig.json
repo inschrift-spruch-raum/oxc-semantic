@@ -20,5 +20,5 @@
     "types": ["node"],
     "ignoreDeprecations": "6.0"
   },
-  "include": ["src", "tests"]
+  "include": ["src/ts", "tests"]
 }

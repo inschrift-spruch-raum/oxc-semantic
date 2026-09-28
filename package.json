@@ -1,54 +1,95 @@
 {
-  "name": "template",
-  "description": "Self-contained TypeScript library template with a pinned toolchain",
+  "name": "oxc-semantic",
+  "description": "Cross-platform Oxc semantic analysis for Node.js and WebAssembly",
   "keywords": [
-    "library-template",
+    "oxc",
+    "semantic-analysis",
+    "javascript",
+    "typescript",
     "oxlint",
     "tsdown",
-    "typescript",
     "vitest"
   ],
   "license": "BSD-3-Clause",
-  "private": true,
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
   },
   "type": "module",
   "packageManager": "pnpm@11.7.0",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "imports": {
-    "#src/*": "./src/*.ts"
+    "#wasm/semantic.wasi": {
+      "types": "./dist/wasm/semantic.wasi.d.cts",
+      "browser": "./dist/wasm/semantic.wasi-browser.js",
+      "default": "./dist/wasm/semantic.wasi.cjs"
+    },
+    "#wasm/*": "./dist/wasm/*",
+    "#src/*": "./src/ts/*.ts"
   },
   "files": [
-    "lib",
-    "README.md"
+    "dist/lib/index.js",
+    "dist/lib/index.d.ts",
+    "dist/wasm/semantic.wasi-browser.js",
+    "dist/wasm/semantic.wasi.cjs",
+    "dist/wasm/semantic.wasi.d.cts",
+    "dist/wasm/semantic.wasm32-wasi.wasm",
+    "dist/wasm/wasi-worker-browser.mjs",
+    "dist/wasm/wasi-worker.mjs",
+    "README.md",
+    "LICENSE"
   ],
+  "napi": {
+    "binaryName": "semantic",
+    "packageName": "oxc-semantic-binding",
+    "targets": [
+      "wasm32-wasip1-threads"
+    ],
+    "wasm": {
+      "browser": {
+        "fs": false
+      }
+    }
+  },
   "exports": {
     ".": {
-      "types": "./lib/index.d.ts",
-      "default": "./lib/index.js"
+      "types": "./dist/lib/index.d.ts",
+      "default": "./dist/lib/index.js"
     },
     "./package.json": "./package.json"
   },
-  "main": "./lib/index.js",
-  "types": "./lib/index.d.ts",
+  "main": "./dist/lib/index.js",
+  "types": "./dist/lib/index.d.ts",
   "scripts": {
-    "build": "tsdown --config-loader unrun --config tsdown.config.ts",
-    "fmt": "oxfmt --config .oxfmtrc.json --write src tests",
-    "fmt:check": "oxfmt --config .oxfmtrc.json --check src tests",
-    "lint": "oxlint --config .oxlintrc.json --type-check --deny-warnings src tests",
-    "lint:fix": "oxlint --config .oxlintrc.json --type-check --deny-warnings --fix src tests",
+    "build": "pnpm run build:wasm && pnpm run build:ts",
+    "build:ts": "tsdown --config-loader unrun --config tsdown.config.ts",
+    "build:wasm": "napi build --manifest-path Cargo.toml --target wasm32-wasip1-threads --target-dir dist/target --js semantic.wasi.cjs --dts semantic.wasi.d.cts --output-dir dist/wasm --release",
+    "fmt": "oxfmt --config .oxfmtrc.json --write src/ts tests",
+    "fmt:check": "oxfmt --config .oxfmtrc.json --check src/ts tests",
+    "lint": "oxlint --config .oxlintrc.json --type-check --deny-warnings src/ts tests",
+    "lint:fix": "oxlint --config .oxlintrc.json --type-check --deny-warnings --fix src/ts tests",
     "test": "vitest run"
   },
   "devDependencies": {
+    "@napi-rs/cli": "3.10.5",
     "@tsconfig/node24": "^24.0.5",
     "@types/node": "^22.20.0",
+    "@vitest/browser-playwright": "4.1.11",
+    "emnapi": "2.0.0-alpha.4",
     "oxfmt": "0.64.0",
     "oxlint": "1.76.0",
     "oxlint-tsgolint": "7.0.2001",
+    "playwright": "1.52.0",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
     "unrun": "^0.3.1",
     "vitest": "^4.1.8"
+  },
+  "dependencies": {
+    "@emnapi/core": "2.0.0-alpha.4",
+    "@emnapi/runtime": "2.0.0-alpha.4",
+    "@napi-rs/wasm-runtime": "1.2.4"
   }
 }
